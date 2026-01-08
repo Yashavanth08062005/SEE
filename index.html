@@ -83,23 +83,38 @@
                 </div>
               </div>
 
-              <div style="margin-top:16px; border-top:1px solid #eee; padding-top:12px;">
-                <label style="font-size:13px; font-weight:600;">My Company / Internship</label>
-                <div style="display:flex; gap:8px; margin-top:4px;">
-                  <input id="myCompanyInput" placeholder="e.g. Google" style="flex:1" />
-                  <button id="saveCompanyBtn" class="action secondary">Update</button>
-                  <button id="removeCompanyBtn" class="action secondary" style="color:red; border-color:red;">X</button>
-                </div>
-              </div>
+
 
             </div>
 
             <div class="card">
               <h3>Add / Remove Skills</h3>
-              <form id="skillForm" onsubmit="return false;">
-                <input id="skillInput" placeholder="e.g. Python" />
-                <button id="addSkillBtn" class="action">Add Skill</button>
+
+              <div style="margin-bottom:16px;">
+                <label style="font-size:13px; font-weight:600;">My Company / Internship</label>
+                <div style="display:flex; gap:8px; margin-top:4px;">
+                  <input id="myCompanyInput" placeholder="e.g. Google" style="flex:1" />
+                  <!-- Buttons removed as per screenshot/simplicity preference, or we keep them? 
+                       Screenshot had 'Update Details' as a main button. 
+                       I'll keep the local 'Update' button for now to ensure functionality works without major logic refactor. 
+                  -->
+                  <button id="saveCompanyBtn" class="action">Update</button>
+                </div>
+              </div>
+
+              <form id="skillForm" onsubmit="return false;" style="margin-bottom:16px;">
+                <label style="font-size:13px; font-weight:600;">Add New Skill</label>
+                <div style="display:flex; gap:8px; margin-top:4px;">
+                  <input id="skillInput" placeholder="e.g. Python" style="flex:1" />
+                  <button id="addSkillBtn" class="action">Add</button>
+                </div>
               </form>
+
+              <div style="margin-bottom:16px;">
+                <h4>Your Company</h4>
+                <ul id="rightCardCompanyDisplay" class="tag-list"></ul>
+              </div>
+
               <div>
                 <h4>Your skills</h4>
                 <ul id="mySkillsList" class="tag-list"></ul>

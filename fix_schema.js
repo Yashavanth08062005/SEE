@@ -47,6 +47,18 @@ async function run() {
         await pool.query("ALTER TABLE peers ADD COLUMN IF NOT EXISTS company VARCHAR(255)");
         console.log("✅ Ensured 'company' column exists in 'peers'.");
 
+        await pool.query("ALTER TABLE peers ADD COLUMN IF NOT EXISTS company VARCHAR(255)");
+        console.log("✅ Ensured 'company' column exists in 'peers'.");
+
+        // Fix resources duplicates
+        console.log("🛠️ Adding unique constraint to 'resources' table...");
+        try {
+            await pool.query("ALTER TABLE resources ADD CONSTRAINT unique_resource_entry UNIQUE (user_id, skill, url)");
+            console.log("✅ Added 'unique_resource_entry' constraint.");
+        } catch (e) {
+            console.log("⚠️ Could not add constraint (might already exist or duplicates present):", e.message);
+        }
+
         console.log("🎉 Schema fix complete.");
     } catch (e) {
         console.error("❌ Schema Fix Error:", e);

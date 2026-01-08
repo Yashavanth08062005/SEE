@@ -114,7 +114,7 @@
   const mySkillsName = document.getElementById("mySkillsName");
   const mySkillsMeta = document.getElementById("mySkillsMeta");
   const mySkillsCompany = document.getElementById("mySkillsCompany");
-  const myCompanyDisplay = document.getElementById("myCompanyDisplay");
+  const myCompanyList = document.getElementById("myCompanyList");
   const myCompanyInput = document.getElementById("myCompanyInput");
   const updateDetailsBtn = document.getElementById("updateDetailsBtn");
   const globalRecommendBtn = document.getElementById("globalRecommendBtn");
@@ -198,26 +198,25 @@
     if (mySkillsMeta) mySkillsMeta.textContent = state.profile.meta || "";
     if (mySkillsCompany) mySkillsCompany.textContent = (state.profile.companies || []).join(", ");
 
-    if (myCompanyDisplay) {
-      myCompanyDisplay.innerHTML = "";
+    if (myCompanyList) {
+      myCompanyList.innerHTML = "";
       const companies = state.profile.companies || [];
 
       if (companies.length > 0) {
-        myCompanyDisplay.style.display = "block"; // Changed from inline-block to allow flex/block children
-        // Render each company as a tag
+        myCompanyList.style.display = "flex";
         companies.forEach(comp => {
-          const tag = document.createElement("span");
-          tag.style.cssText = "display:inline-block; padding:4px 12px; background:#e0f2fe; color:#0369a1; border-radius:16px; font-weight:600; font-size:14px; margin-right:8px; margin-bottom:4px; cursor:pointer;";
-          tag.textContent = comp;
-          tag.title = "Click to remove " + comp;
+          const li = document.createElement("li");
+          li.textContent = comp;
+          li.title = "Click to remove " + comp;
+          li.style.cursor = "pointer";
 
-          tag.addEventListener("click", () => {
+          li.addEventListener("click", () => {
             if (confirm(`Remove company "${comp}"? This will also remove associated skills.`)) {
               state.profile.companies = state.profile.companies.filter(c => c !== comp);
               // Remove linked skills
               state.mySkills = state.mySkills.filter(s => {
                 if (typeof s === 'object') return s.company !== comp;
-                return true; // Keep unlinked (legacy) skills
+                return true;
               });
 
               saveState();
@@ -226,10 +225,10 @@
               refreshAll();
             }
           });
-          myCompanyDisplay.appendChild(tag);
+          myCompanyList.appendChild(li);
         });
       } else {
-        myCompanyDisplay.style.display = "none";
+        myCompanyList.style.display = "none";
       }
     }
   }
@@ -292,18 +291,7 @@
     refreshAll();
   });
 
-  // My Company handlers
-  myCompanyDisplay && myCompanyDisplay.addEventListener("click", () => {
-    if (confirm(`Remove company "${state.profile.company}"? This will also remove ALL your skills.`)) {
-      state.profile.company = "";
-      state.mySkills = []; // Clear all skills
-      if (myCompanyInput) myCompanyInput.value = "";
-      saveState();
-      renderMySkillsProfileCard();
-      renderMySkills(); // Refresh skills list (to empty)
-      refreshAll();
-    }
-  });
+
 
 
   // my skills

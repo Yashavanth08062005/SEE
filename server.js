@@ -109,7 +109,7 @@ app.post('/api/state/save', async (req, res) => {
         if (profile) {
             await db.query(
                 'UPDATE users SET name=$1, meta=$2, company=$3, avatar=$4 WHERE id=$5',
-                [profile.name, profile.meta, JSON.stringify(profile.companies || []), profile.avatar, userId]
+                [profile.name, profile.meta, profile.company || "", profile.avatar, userId]
             );
         }
 
@@ -145,6 +145,7 @@ app.post('/api/state/save', async (req, res) => {
         */
 
         // save resources
+        await db.query('DELETE FROM resources WHERE user_id=$1', [userId]); // Clear old resources to prevent duplication
         if (resources && Array.isArray(resources)) {
             console.log(`[Server] Saving ${resources.length} resources...`);
             for (const r of resources) {
@@ -163,6 +164,52 @@ app.post('/api/state/save', async (req, res) => {
     } catch (err) {
         console.error("❌ Save Error:", err.message);
         res.status(500).json({ error: "Save failed" });
+    }
+});
+
+/* =========================
+   RECOMMEND RESOURCE (Push to Peer)
+========================= */
+app.post('/api/resources/recommend', async (req, res) => {
+    const { senderId, receiverId, resource } = req.body;
+
+    try {
+        if (!senderId || !receiverId || !resource)
+            return res.status(400).json({ error: "Missing required fields" });
+
+        // Get sender name for 'author' field
+        const senderRes = await db.query('SELECT name, username FROM users WHERE id=$1', [senderId]);
+        const senderName = senderRes.rows[0].name || senderRes.rows[0].username;
+
+        // Insert into RECEIVER'S list
+        // Note: peer_index might be irrelevant for the receiver, or we set it to null. 
+        // Or we could try to find the index of the sender in the receiver's list? 
+        // For simplicity, let's set peer_index to null (it's their own resource now, or recommended by someone).
+        // Actually, existing logic uses peer_index for display grouping. 
+        // If we want it to show up as "from Peer", the receiver needs to know which peer sent it.
+
+        // Find sender's index in receiver's peer list?
+        // Let's look up the peer entry.
+        const peerRes = await db.query('SELECT id FROM peers WHERE user_id=$1 AND linked_user_id=$2', [receiverId, senderId]);
+        let peerIndex = null;
+        // This mapping to a simple integer index is fragile if based on array position.
+        // The current 'peer_index' in DB seems to refer to the CLIENT-SIDE array index, which is very bad practice for persistent storage.
+        // However, refactoring that is out of scope. We will try to rely on 'author' string for display if index is missing.
+
+        // Insert
+        await db.query(
+            'INSERT INTO resources (user_id, skill, title, url, note, author, peer_index) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+            [receiverId, resource.skill, resource.title, resource.url, resource.note, senderName, -1]
+            // Using -1 or null for peer_index to indicate "pushed" resource.
+        );
+
+        res.json({ success: true });
+    } catch (err) {
+        if (err.code === '23505') { // Unique violation
+            return res.status(409).json({ error: "Resource already exists for this user." });
+        }
+        console.error("❌ Recommend Error:", err.message);
+        res.status(500).json({ error: "Recommendation failed" });
     }
 });
 
@@ -224,7 +271,7 @@ app.get('/api/state/:userId', async (req, res) => {
                 id: peer.id, // Include ID for removal
                 name: peer.name,
                 company: peer.company,
-                skills: skillRows, // object {skill, company}
+                skills: skillRows.map(r => r.skill), // Flatten to strings
                 linkedId: peer.linked_user_id
             });
         }
@@ -270,16 +317,13 @@ app.get('/api/state/:userId', async (req, res) => {
             profile: {
                 name: userProfile.name || "",
                 meta: userProfile.meta || "",
-                // Try parse JSON, else fallback to string array or empty
-                companies: (() => {
-                    try { return JSON.parse(userProfile.company); }
-                    catch (e) { return userProfile.company ? [userProfile.company] : []; }
-                })(),
+                company: userProfile.company || "",
                 avatar: userProfile.avatar || ""
             },
             mySkills: skillsRes.rows, // Returns {skill, company} objects
             peers,
-            resources: [...myResources, ...sharedResources]
+            resources: myResources,
+            sharedResources: sharedResources
         });
     } catch (err) {
         console.error("❌ Load Error:", err.message);

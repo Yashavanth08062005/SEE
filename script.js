@@ -62,9 +62,7 @@
   }
 
   // utils
-  function normalizeSkill(s) {
-    return s.trim().replace(/\s+/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-  }
+
 
   function aggregateSkillCounts() {
     const counts = {};
@@ -184,8 +182,83 @@
     if (mySkillsPfp) mySkillsPfp.src = state.profile.avatar || "";
     if (mySkillsName) mySkillsName.textContent = state.profile.name || "Your Name";
     if (mySkillsMeta) mySkillsMeta.textContent = state.profile.meta || "";
-    if (mySkillsCompany) mySkillsCompany.textContent = state.profile.company || "";
+
+    // Calculate unique companies from skills for the Left Card display
+    const uniqueCompanies = new Set();
+    (state.mySkills || []).forEach(s => {
+      const c = typeof s === 'object' ? s.company : "";
+      if (c) uniqueCompanies.add(c);
+    });
+    // We do NOT add state.profile.company here, because that's just the temporary input for new skills.
+    // The profile card should reflect established companies (those with skills).
+    // However, if the user explicitly wants to see the one they are typing, we could add it.
+    // Given the request "microsoft and infosys are different company seperate those", 
+    // it implies a list of distinct entities.
+
+    if (mySkillsCompany) {
+      if (uniqueCompanies.size > 0) {
+        mySkillsCompany.textContent = Array.from(uniqueCompanies).join(" • ");
+      } else {
+        mySkillsCompany.textContent = "";
+      }
+    }
+
     if (myCompanyInput && state.profile.company) myCompanyInput.value = state.profile.company;
+
+    // Update right card company display
+    const rightCardCompanyDisplay = document.getElementById("rightCardCompanyDisplay");
+    if (rightCardCompanyDisplay) {
+      // Derive unique companies from skills
+      const companies = new Set();
+      (state.mySkills || []).forEach(s => {
+        const c = typeof s === 'object' ? s.company : "";
+        if (c) companies.add(c);
+      });
+      // Also include the current profile company if not empty
+      if (state.profile.company) companies.add(state.profile.company);
+
+      rightCardCompanyDisplay.innerHTML = "";
+      rightCardCompanyDisplay.style.display = companies.size ? "flex" : "none";
+      rightCardCompanyDisplay.style.backgroundColor = "transparent";
+
+      companies.forEach(comp => {
+        // Use LI to match .tag-list styles from CSS automatically
+        const li = document.createElement("li");
+
+        li.style.display = "inline-flex";
+        li.style.alignItems = "center";
+        li.style.gap = "8px";
+        li.style.cursor = "default"; // Override default pointer if needed, though skills might be pointer
+
+        li.innerHTML = `
+              <span>${escapeHtml(comp)}</span>
+              <span class="remove-company" style="cursor:pointer; color:#dc2626; font-weight:bold; display:flex; align-items:center;">&times;</span>
+          `;
+        li.querySelector(".remove-company").addEventListener("click", async (e) => {
+          e.stopPropagation();
+          if (confirm(`Remove company "${comp}" and ALL its associated skills?`)) {
+            // Remove skills with this company
+            state.mySkills = state.mySkills.filter(s => {
+              const c = typeof s === 'object' ? s.company : "";
+              return c !== comp;
+            });
+
+            // If this was the current profile company, clear it
+            if (state.profile.company === comp) {
+              state.profile.company = "";
+              if (myCompanyInput) myCompanyInput.value = "";
+            }
+
+            await saveState();
+            renderMySkillsProfileCard();
+            renderMySkills();
+            refreshAll();
+          }
+        });
+
+        rightCardCompanyDisplay.appendChild(li);
+      });
+    }
   }
 
   // avatar handling
@@ -247,9 +320,11 @@
   });
 
   // My Company handlers
-  saveCompanyBtn && saveCompanyBtn.addEventListener("click", () => {
-    state.profile.company = myCompanyInput.value.trim();
-    saveState();
+  saveCompanyBtn && saveCompanyBtn.addEventListener("click", async () => {
+    const newCompany = myCompanyInput.value.trim();
+    // Just update the current active company for adding new skills
+    state.profile.company = newCompany;
+    await saveState();
     renderMySkillsProfileCard();
     refreshAll();
   });
@@ -265,16 +340,42 @@
   // my skills
   function renderMySkills() {
     mySkillsList.innerHTML = "";
-    (state.mySkills || []).forEach((s, idx) => {
+    (state.mySkills || []).forEach((sObj, idx) => {
+      // Handle both legacy strings and new objects
+      const skillName = typeof sObj === 'object' ? sObj.skill : sObj;
+      const skillCompany = typeof sObj === 'object' ? sObj.company : "";
+
       const li = document.createElement("li");
-      li.textContent = s;
+
+      // Display format: "Skill (Company)" or just "Skill"
+      li.textContent = skillName + (skillCompany ? ` (${skillCompany})` : "");
+
       li.dataset.idx = idx;
       li.title = "Click to remove";
       li.style.cursor = "pointer";
-      li.addEventListener("click", () => {
-        if (confirm(`Remove skill "${s}" from your profile?`)) {
+      li.addEventListener("click", async () => {
+        if (confirm(`Remove skill "${skillName}" from your profile?`)) {
+          // REMOVE SKILL LOGIC
+          const removedCompany = skillCompany;
           state.mySkills.splice(idx, 1);
-          saveState();
+
+          // Check if we should remove the company from profile
+          // "if there is only one skill in that company and after you remove that skill then that compay will be remove.."
+          if (removedCompany) {
+            const othersWithCompany = state.mySkills.filter(s => {
+              const c = typeof s === 'object' ? s.company : "";
+              return c === removedCompany;
+            });
+
+            // If no other skills have this company, AND it matches our current profile company
+            if (othersWithCompany.length === 0 && state.profile.company === removedCompany) {
+              state.profile.company = "";
+              if (myCompanyInput) myCompanyInput.value = "";
+              alert(`Company "${removedCompany}" removed as it has no more skills.`);
+            }
+          }
+
+          await saveState();
           renderMySkills();
           refreshAll();
         }
@@ -283,13 +384,23 @@
     });
   }
 
-  addSkillBtn && addSkillBtn.addEventListener("click", () => {
+  addSkillBtn && addSkillBtn.addEventListener("click", async () => {
     const raw = skillInput.value;
     if (!raw.trim()) return;
     const normalized = normalizeSkill(raw);
-    if (!state.mySkills.includes(normalized)) {
-      state.mySkills.push(normalized);
-      saveState();
+
+    // Check duplicates
+    const exists = state.mySkills.some(s => {
+      const n = typeof s === 'object' ? s.skill : s;
+      return n === normalized;
+    });
+
+    if (!exists) {
+      // Attach CURRENT company
+      const currentCompany = state.profile.company || "";
+      state.mySkills.push({ skill: normalized, company: currentCompany });
+
+      await saveState();
       skillInput.value = "";
       renderMySkills();
       refreshAll();
@@ -354,6 +465,7 @@
         <div style="flex:0 0 auto; display:flex; flex-direction:column; gap:8px">
           <div style="display:flex; gap:8px;">
             <button data-i="${i}" class="recommendResourceBtn action secondary">Recommend Resource</button>
+            <button data-name="${escapeHtml(name)}" class="viewRecommendationsBtn action secondary">View Recommendations</button>
             <button data-i="${i}" class="removePeerBtn secondary">Remove</button>
           </div>
         </div>
@@ -365,13 +477,32 @@
       btn.addEventListener("click", (ev) => {
         const i = parseInt(ev.target.dataset.i, 10);
         resPeerIndex.value = i;
-        // populate skill dropdown with peer skills
-        const skills = (state.peers[i].skills || []).slice();
-        resSkill.innerHTML = "<option value=''>(any skill)</option>" + skills.map(s => `<option>${escapeHtml(s)}</option>`).join("");
+
+        // Populate skill dropdown with PEER skills AND MY skills
+        const peerSkills = (state.peers[i].skills || []);
+        const mySkills = (state.mySkills || []);
+
+        // Merge and deduplicate
+        const combined = Array.from(new Set([...peerSkills, ...mySkills])).sort();
+
+        resSkill.innerHTML = "<option value=''>(any skill)</option>" + combined.map(s => `<option>${escapeHtml(s)}</option>`).join("");
+
         resTitle.value = "";
         resURL.value = "";
         resNote.value = "";
         resourceModal.style.display = "flex";
+      });
+    });
+
+    document.querySelectorAll(".viewRecommendationsBtn").forEach(btn => {
+      btn.addEventListener("click", (ev) => {
+        const name = ev.target.dataset.name;
+        showPage("resources");
+
+        // Auto-set the filter
+        filterPeer.value = name;
+        // Trigger change event to filter
+        filterPeer.dispatchEvent(new Event('change'));
       });
     });
 
@@ -526,7 +657,9 @@
     // skills and peers that have resources
     const skillsSet = new Set();
     const peersSet = new Set();
-    (state.resources || []).forEach(r => {
+    const allResources = [...(state.resources || []), ...(state.sharedResources || [])];
+
+    allResources.forEach(r => {
       if (r.skill) skillsSet.add(r.skill);
       if (r.author) peersSet.add(r.author);
     });
@@ -536,8 +669,8 @@
       if (p.name) peersSet.add(p.name);
     });
 
-    filterSkill.innerHTML = '<option value="">All Skills</option>' + Array.from(skillsSet).sort().map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
-    filterPeer.innerHTML = '<option value="">All Peers</option>' + Array.from(peersSet).sort().map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
+    filterSkill.innerHTML = '<option value="">All Skills</option>' + Array.from(skillsSet).filter(s => s !== "All").sort().map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+    filterPeer.innerHTML = '<option value="">All Peers</option>' + Array.from(peersSet).filter(p => p !== "All").sort().map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
   }
 
   function renderResources() {
@@ -546,7 +679,8 @@
     const skillF = filterSkill.value;
     const peerF = filterPeer.value;
 
-    const list = (state.resources || []).slice().reverse().filter(r => {
+    const allResources = [...(state.resources || []), ...(state.sharedResources || [])];
+    const list = allResources.slice().reverse().filter(r => {
       if (skillF && r.skill !== skillF) return false;
       if (peerF && r.author !== peerF) return false;
       if (!q) return true;
@@ -583,7 +717,8 @@
   }
 
   // resource modal handlers
-  saveResourceBtn.addEventListener("click", () => {
+  // resource modal handlers
+  saveResourceBtn.addEventListener("click", async () => {
     const i = parseInt(resPeerIndex.value, 10);
     const title = resTitle.value.trim();
     const url = resURL.value.trim();
@@ -592,10 +727,50 @@
 
     if (!url) { alert("Please add a URL."); return; }
 
-    const author = (state.peers[i] && state.peers[i].name) ? state.peers[i].name : `Peer ${i + 1}`;
+    const peer = state.peers[i];
+
+    // Check if this is a recommendation for a Linked Peer
+    if (peer && peer.linkedId) {
+      // Use Server API to push resource
+      try {
+        const res = await fetch('/api/resources/recommend', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            senderId: currentUserId,
+            receiverId: peer.linkedId,
+            resource: { title: title || url, url, note, skill }
+          })
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          alert("Failed to recommend: " + (data.error || "Unknown error"));
+          return;
+        }
+
+        alert("Resource recommended successfully!");
+        resourceModal.style.display = "none";
+
+        // Reload state to see it in "Shared Resources" (since we are mutuals)
+        await loadState();
+        renderAll();
+        showPage("resources");
+
+      } catch (e) {
+        console.error(e);
+        alert("Network error recommending resource.");
+      }
+      return;
+    }
+
+    // Fallback: Local save (for non-linked mock peers or self-notes if we supported that)
+    const author = (peer && peer.name) ? peer.name : `Peer ${i + 1}`;
     const resource = { title: title || url, url, note, skill, author, peerIndex: i, created: Date.now() };
     state.resources = state.resources || [];
     state.resources.push(resource);
+
+    // Optimistic save? Or just standard save
     saveState();
     renderResources();
     resourceModal.style.display = "none";
@@ -618,6 +793,11 @@
 
   // helpers
   function escapeHtml(s) { if (!s) return ""; return s.toString().replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;"); }
+
+  function normalizeSkill(s) {
+    if (typeof s !== 'string') return "";
+    return s.trim().replace(/\s+/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  }
 
   // refresh everything
   function refreshAll() {
