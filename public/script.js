@@ -199,13 +199,13 @@
   }
 
   // Profile Edit
-  const pName = document.getElementById("profileName");
-  const pMeta = document.getElementById("profileMeta");
+  const pName = document.getElementById("nameInput"); // Mapped to nameInput
+  const pMeta = document.getElementById("metaInput"); // Mapped to metaInput
   const pSave = document.getElementById("saveProfileBtn");
-  const userName = document.getElementById("userName");
-  const userMeta = document.getElementById("userMeta");
-  const brandAvatar = document.querySelector(".brand-avatar"); // in header
-  const profileAvatar = document.getElementById("profileAvatar"); // in profile page
+  const userName = document.getElementById("userName"); // May be null
+  const userMeta = document.getElementById("userMeta"); // May be null
+  const brandAvatar = document.getElementById("brandAvatar"); // Fixed selector
+  const profileAvatar = document.getElementById("profileAvatar"); // May be null
 
   const avatarInput = document.getElementById("avatarInput");
   const changeAvatarBtn = document.getElementById("changeAvatarBtn");
@@ -241,20 +241,20 @@
   });
 
   function renderProfile() {
-    pName.value = state.profile.name || "";
-    pMeta.value = state.profile.meta || "";
-    userName.textContent = state.profile.name || "Your Name";
-    userMeta.textContent = state.profile.meta || "Student / Developer";
+    if (pName) pName.value = state.profile.name || "";
+    if (pMeta) pMeta.value = state.profile.meta || "";
+    if (userName) userName.textContent = state.profile.name || "Your Name";
+    if (userMeta) userMeta.textContent = state.profile.meta || "Student / Developer";
 
     const def = "https://via.placeholder.com/40";
     const bigDef = "https://via.placeholder.com/80";
 
     if (state.profile.avatar) {
-      brandAvatar.src = state.profile.avatar;
-      profileAvatar.src = state.profile.avatar;
+      if (brandAvatar) brandAvatar.src = state.profile.avatar;
+      if (profileAvatar) profileAvatar.src = state.profile.avatar;
     } else {
-      brandAvatar.src = def;
-      profileAvatar.src = bigDef;
+      if (brandAvatar) brandAvatar.src = def;
+      if (profileAvatar) profileAvatar.src = bigDef;
     }
   }
 
@@ -273,10 +273,11 @@
 
   // skills
   const skillInput = document.getElementById("skillInput");
-  const companyInput = document.getElementById("companyInput");
-  const updateDetailsBtn = document.getElementById("updateDetailsBtn");
+  const companyInput = document.getElementById("myCompanyInput"); // Mapped to myCompanyInput
+  const saveCompanyBtn = document.getElementById("saveCompanyBtn");
+  const addSkillBtn = document.getElementById("addSkillBtn");
   const mySkillsList = document.getElementById("mySkillsList");
-  const myCompanyTags = document.getElementById("myCompanyTags");
+  const myCompanyTags = document.getElementById("myCompanyList");
 
   // Avatar Logic for My Skills Card
   mySkillsChangePhoto.addEventListener("click", () => mySkillsPhotoInput.click());
@@ -321,9 +322,9 @@
   }
 
   // Add Metadata (Company & Skills)
-  updateDetailsBtn.addEventListener("click", () => {
-    const raw = skillInput.value;
-    const companyVal = companyInput.value.trim();
+  function handleUpdateDetails() {
+    const raw = skillInput ? skillInput.value : "";
+    const companyVal = companyInput ? companyInput.value.trim() : "";
 
     // 1. Handle Company
     if (companyVal) {
@@ -333,7 +334,7 @@
       if (!exists) {
         state.profile.companies.push(companyVal);
       }
-      companyInput.value = "";
+      if (companyInput) companyInput.value = "";
     }
 
     // 2. Handle Skills
@@ -362,40 +363,46 @@
         refreshCharts();
         fetchAndRenderSkillMatch();
       }
-      skillInput.value = "";
+      if (skillInput) skillInput.value = "";
     } else if (companyVal) {
       // Only company added
       saveState();
       renderMySkillsProfileCard();
       renderMySkills(); // to update company tags area
     }
-  });
+  }
+
+  if (updateDetailsBtn) updateDetailsBtn.addEventListener("click", handleUpdateDetails);
+
+
 
   // Render "Your Company" tags and "Your skills" list
   function renderMySkills() {
     // A. Render Company Tags
-    myCompanyTags.innerHTML = "";
-    if (state.profile.companies && state.profile.companies.length > 0) {
-      state.profile.companies.forEach(comp => {
-        const tag = document.createElement("span");
-        tag.className = "skill-tag"; // reuse skill-tag style or create new
-        tag.style.cssText = "background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; padding:4px 8px; border-radius:12px; margin-right:5px; margin-bottom:5px; display:inline-block; font-size:12px; cursor:default;";
-        tag.textContent = comp;
+    if (myCompanyTags) {
+      myCompanyTags.innerHTML = "";
+      if (state.profile.companies && state.profile.companies.length > 0) {
+        state.profile.companies.forEach(comp => {
+          const tag = document.createElement("span");
+          tag.className = "skill-tag"; // reuse skill-tag style or create new
+          tag.style.cssText = "background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; padding:4px 8px; border-radius:12px; margin-right:5px; margin-bottom:5px; display:inline-block; font-size:12px; cursor:default;";
+          tag.textContent = comp;
 
-        // Remove 'x'
-        // If user clicks tag, maybe remove company?
-        // Let's add 'x' for removing company
-        const x = document.createElement("span");
-        x.textContent = " ×";
-        x.style.cursor = "pointer";
-        x.style.marginLeft = "4px";
-        x.onclick = () => removeCompany(comp);
-        tag.appendChild(x);
+          // Remove 'x'
+          // If user clicks tag, maybe remove company?
+          // Let's add 'x' for removing company
+          const x = document.createElement("span");
+          x.textContent = " ×";
+          x.style.cursor = "pointer";
+          x.style.marginLeft = "4px";
+          x.onclick = () => removeCompany(comp);
+          tag.appendChild(x);
 
-        myCompanyTags.appendChild(tag);
-      });
-    } else {
-      myCompanyTags.innerHTML = "<span style='color:#9ca3af; font-size:12px; font-style:italic;'>No company linked</span>";
+          myCompanyTags.appendChild(tag);
+        });
+      } else {
+        myCompanyTags.innerHTML = "<span style='color:#9ca3af; font-size:12px; font-style:italic;'>No company linked</span>";
+      }
     }
 
 
@@ -511,26 +518,29 @@
 
   // Global Search
   let searchDebounce;
-  peerSearchGlobal.addEventListener("input", (e) => {
-    clearTimeout(searchDebounce);
-    const q = e.target.value.trim();
-    if (!q) {
-      peerListGlobal.innerHTML = "";
-      return;
-    }
-    searchDebounce = setTimeout(async () => {
-      // API call to search users in DB
-      try {
-        const res = await fetch(`/api/peers/search?q=${encodeURIComponent(q)}`);
-        const users = await res.json();
-        renderGlobalPeers(users);
-      } catch (err) {
-        console.error(err);
+  if (peerSearchGlobal) {
+    peerSearchGlobal.addEventListener("input", (e) => {
+      clearTimeout(searchDebounce);
+      const q = e.target.value.trim();
+      if (!q) {
+        if (peerListGlobal) peerListGlobal.innerHTML = "";
+        return;
       }
-    }, 400);
-  });
+      searchDebounce = setTimeout(async () => {
+        // API call to search users in DB
+        try {
+          const res = await fetch(`/api/peers/search?q=${encodeURIComponent(q)}`);
+          const users = await res.json();
+          renderGlobalPeers(users);
+        } catch (err) {
+          console.error(err);
+        }
+      }, 400);
+    });
+  }
 
   function renderGlobalPeers(users) {
+    if (!peerListGlobal) return;
     peerListGlobal.innerHTML = "";
     if (users.length === 0) {
       peerListGlobal.innerHTML = "<div class='muted'>No users found.</div>";
@@ -940,6 +950,7 @@
   if (currentUserId === "undefined") currentUserId = null;
 
   function setupAuth() {
+    // console.log("running setupAuth");
     authScreen = document.getElementById("authScreen");
     authTitle = document.getElementById("authTitle");
     authForm = document.getElementById("authForm");
@@ -949,7 +960,10 @@
     authMsg = document.getElementById("authMsg");
     appContainer = document.querySelector(".app");
 
-    if (!authForm) return;
+    if (!authForm) {
+      console.error("AuthForm not found!");
+      return;
+    }
 
     authSwitch.addEventListener("click", () => {
       isRegistering = !isRegistering;
@@ -958,15 +972,19 @@
       authMsg.textContent = "";
     });
 
-    document.getElementById("logoutBtn").addEventListener("click", () => {
-      localStorage.removeItem("psi_user");
-      localStorage.removeItem("psi_user_id");
-      location.reload();
-    });
+    const logoutBtn = document.getElementById("logoutBtn");
+    if (logoutBtn) {
+      logoutBtn.addEventListener("click", () => {
+        localStorage.removeItem("psi_user");
+        localStorage.removeItem("psi_user_id");
+        location.reload();
+      });
+    }
 
     authForm.addEventListener("submit", async (e) => {
       e.preventDefault();
-      if (authMsg) authMsg.textContent = "";
+      // alert("Submit pressed!"); // Force user validation
+      if (authMsg) authMsg.textContent = "Processing...";
       const username = authUsername.value.trim();
       const password = authPassword.value.trim();
       if (!username || !password) return;
