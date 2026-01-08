@@ -877,7 +877,7 @@
     resourceModal.style.display = "flex";
   });
 
-  saveResourceBtn.addEventListener("click", () => {
+  saveResourceBtn.addEventListener("click", async () => {
     const title = resTitle.value.trim();
     const url = resURL.value.trim();
     const note = resNote.value.trim();
@@ -886,24 +886,74 @@
     if (!url) { alert("Please add a URL."); return; }
 
     const isMe = resAuthorIndex.value === "-1";
-    let author, peerIdxVal;
 
+    // IF "All" is selected, we treat it as a personal/general note (saved to Self)
     if (isMe) {
-      author = "All";
-      peerIdxVal = -1;
-    } else {
-      const i = parseInt(resAuthorIndex.value, 10);
-      author = (state.peers[i] && state.peers[i].name) ? state.peers[i].name : `Peer ${i + 1}`;
-      peerIdxVal = i;
+      const resource = { title: title || url, url, note, skill, author: "All", peerIndex: -1, created: Date.now() };
+      state.resources = state.resources || [];
+      state.resources.push(resource);
+      saveState();
+      renderResources();
+      resourceModal.style.display = "none";
+      showPage("resources");
+      return;
     }
 
-    const resource = { title: title || url, url, note, skill, author, peerIndex: peerIdxVal, created: Date.now() };
-    state.resources = state.resources || [];
-    state.resources.push(resource);
-    saveState();
-    renderResources();
-    resourceModal.style.display = "none";
-    showPage("resources");
+    // IF a specific PEER is selected, we SEND it to them
+    const i = parseInt(resAuthorIndex.value, 10);
+    const peer = state.peers[i];
+
+    if (peer && peer.linkedId) {
+      // Send to Peer via API
+      try {
+        const res = await fetch('/api/resources/recommend', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            senderId: currentUserId,
+            receiverId: peer.linkedId,
+            resource: { title: title || url, url, note, skill }
+          })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          alert(`Resource recommended to ${peer.name || "Peer"} successfully!`);
+
+          // ALSO save locally so I can see what I recommended
+          const author = (peer && peer.name) ? peer.name : `Peer ${i + 1}`;
+          // We use the peer's name as author for display grouping "Recommended for [Peer]" or similar?
+          // Actually currently display is "by [author]". 
+          // If I recommended it, I am the author in the Peer's DB. 
+          // But in MY DB, I want to see it grouped under that Peer.
+          // The resource list filters by 'author' or 'peerIndex'.
+          // If we set 'peerIndex' to 'i', it will show up when filtering by that Peer.
+
+          const resource = { title: title || url, url, note, skill, author, peerIndex: i, created: Date.now() };
+          state.resources = state.resources || [];
+          state.resources.push(resource);
+          saveState();
+          renderResources();
+
+          resourceModal.style.display = "none";
+          showPage("resources");
+        } else {
+          alert("Failed to recommend: " + (data.error || "Unknown error"));
+        }
+      } catch (e) {
+        console.error(e);
+        alert("Network error sending recommendation.");
+      }
+    } else {
+      // Fallback for non-linked peers (local save as 'by Peer')
+      const author = (peer && peer.name) ? peer.name : `Peer ${i + 1}`;
+      const resource = { title: title || url, url, note, skill, author, peerIndex: i, created: Date.now() };
+      state.resources = state.resources || [];
+      state.resources.push(resource);
+      saveState();
+      renderResources();
+      resourceModal.style.display = "none";
+      showPage("resources");
+    }
   });
 
   cancelResourceBtn.addEventListener("click", () => resourceModal.style.display = "none");
