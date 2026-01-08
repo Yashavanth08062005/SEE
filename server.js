@@ -19,6 +19,71 @@ app.use(express.json());
 db.initDb();
 
 /* =========================
+   GLOBAL CONSTANTS (Skill Match Feature)
+   Top 20 Technical & Soft Skills for College Students
+========================= */
+const TOP_20_SKILLS = [
+    "Python", "Java", "C++", "JavaScript", "HTML", "CSS", "React", "Node.js",
+    "SQL", "MongoDB", "Git", "Docker", "AWS", "Linux",
+    "Machine Learning", "Data Structures", "Algorithms",
+    "Communication", "Problem Solving", "Leadership"
+];
+
+/* =========================
+   SKILL MATCH ENDPOINT
+   Compare User Skills with Top 20 Global Skills
+========================= */
+app.get('/api/skill-match/:userId', async (req, res) => {
+    const { userId } = req.params;
+
+    try {
+        // 1. Fetch user skills from potential sources (skills table)
+        // Assumption: userId is already available in the current session/state
+        const skillRes = await db.query('SELECT skill FROM skills WHERE user_id=$1', [userId]);
+
+        // 2. Normalize User Skills (Lowercase, Trim)
+        // Time Complexity: O(N) where N is number of user skills
+        const userSkillsSet = new Set(
+            skillRes.rows
+                .filter(r => r.skill && typeof r.skill === 'string')
+                .map(r => r.skill.trim().toLowerCase())
+        );
+        console.log("[Server] User Skill Set:", Array.from(userSkillsSet));
+
+        // 3. Compare with Top 20 Skills
+        // Time Complexity: O(M) where M is constant 20. Total = O(N)
+        const matchedSkills = [];
+        const missingSkills = [];
+        let matchCount = 0;
+
+        TOP_20_SKILLS.forEach(skill => {
+            if (userSkillsSet.has(skill.toLowerCase())) {
+                matchedSkills.push(skill);
+                matchCount++;
+            } else {
+                missingSkills.push(skill);
+            }
+        });
+
+        console.log(`[Server] Matched: ${matchedSkills.length}, Missing: ${missingSkills.length}`);
+
+        // 4. Calculate Percentage
+        const percentage = Math.round((matchCount / TOP_20_SKILLS.length) * 100);
+
+        res.json({
+            percentage,
+            matchedSkills,
+            missingSkills,
+            totalTopSkills: TOP_20_SKILLS.length
+        });
+
+    } catch (err) {
+        console.error("❌ Skill Match Error:", err.message);
+        res.status(500).json({ error: "Skill comparison failed" });
+    }
+});
+
+/* =========================
    REGISTER
 ========================= */
 app.post('/api/register', async (req, res) => {
@@ -107,9 +172,17 @@ app.post('/api/state/save', async (req, res) => {
 
         // Update profile in users table
         if (profile) {
+            // Serialize companies array if present, otherwise fallback to single company or empty
+            let companyVal = "";
+            if (profile.companies && Array.isArray(profile.companies)) {
+                companyVal = JSON.stringify(profile.companies);
+            } else {
+                companyVal = profile.company || "";
+            }
+
             await db.query(
                 'UPDATE users SET name=$1, meta=$2, company=$3, avatar=$4 WHERE id=$5',
-                [profile.name, profile.meta, profile.company || "", profile.avatar, userId]
+                [profile.name, profile.meta, companyVal, profile.avatar, userId]
             );
         }
 
@@ -224,6 +297,33 @@ app.get('/api/state/:userId', async (req, res) => {
         const userRes = await db.query('SELECT name, meta, company, avatar FROM users WHERE id=$1', [userId]);
         const userProfile = userRes.rows[0] || {};
 
+        // Parse company (could be JSON array or simple string)
+        let companies = [];
+        let rawComp = userProfile.company || "";
+        try {
+            const parsed = JSON.parse(rawComp);
+            if (Array.isArray(parsed)) {
+                companies = parsed;
+                // Legacy support: join for display or just take first
+                // userProfile.company = companies.join(", "); 
+            } else if (parsed) {
+                companies = [parsed.toString()];
+            }
+        } catch (e) {
+            // Not JSON, simple string
+            if (rawComp.trim()) companies = [rawComp];
+        }
+
+        userProfile.companies = companies;
+        // Ensure legacy 'company' field is arguably valid if client relies on it (though we updated client to use companies)
+        // Let's leave userProfile.company as the raw string or updated string? 
+        // Client uses state.profile.company in some places? 
+        // Actually client script.js renderMySkillsProfileCard uses (state.profile.companies || [])
+        // But older parts might use state.profile.company.
+        // Let's set company to first item for safety?
+        // userProfile.company = companies.length > 0 ? companies[0] : ""; 
+
+
         const skillsRes = await db.query(
             'SELECT skill, company FROM skills WHERE user_id=$1',
             [userId]
@@ -318,6 +418,7 @@ app.get('/api/state/:userId', async (req, res) => {
                 name: userProfile.name || "",
                 meta: userProfile.meta || "",
                 company: userProfile.company || "",
+                companies: userProfile.companies || [],
                 avatar: userProfile.avatar || ""
             },
             mySkills: skillsRes.rows, // Returns {skill, company} objects
@@ -548,6 +649,10 @@ app.get('/api/debug/users', async (req, res) => {
 /* =========================
    SERVER
 ========================= */
+
 app.listen(PORT, () => {
     console.log(`🚀 Server running at http://localhost:${PORT}`);
 });
+
+// Trigger restart
+
