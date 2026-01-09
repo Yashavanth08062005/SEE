@@ -109,17 +109,33 @@
       const trendCtx = trendEl.getContext("2d");
       if (trendingChart) trendingChart.destroy();
       trendingChart = new Chart(trendCtx, {
-        type: 'line',
+        type: 'bar',
         data: {
-          labels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
+          labels: [],
           datasets: [{
-            label: 'Skills Added',
-            data: [0, 0, 0, 0, 0, 0], // placeholder
-            borderColor: '#4f46e5',
-            tension: 0.4
+            label: 'Skill Frequency',
+            data: [],
+            backgroundColor: '#00ED64', // MongoDB Green
+            borderRadius: 4,
+            barPercentage: 0.6
           }]
         },
-        options: { responsive: true, maintainAspectRatio: false }
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              beginAtZero: true,
+              grid: { color: '#E8EDEB' }
+            },
+            x: {
+              grid: { display: false }
+            }
+          },
+          plugins: {
+            legend: { display: false }
+          }
+        }
       });
     }
 
@@ -189,11 +205,37 @@
       domainChart.update();
     }
 
-    // trend dummy
+    // Trending Skills (Aggregated from Me + Peers)
     if (trendingChart) {
-      // just show incremental line
-      const count = state.mySkills.length;
-      trendingChart.data.datasets[0].data = [Math.max(0, count - 5), Math.max(0, count - 4), Math.max(0, count - 3), Math.max(0, count - 2), Math.max(0, count - 1), count];
+      const skillCounts = {};
+
+      // Count my skills
+      (state.mySkills || []).forEach(s => {
+        const name = typeof s === 'object' ? s.skill : s;
+        if (name) {
+          const n = normalizeSkill(name);
+          skillCounts[n] = (skillCounts[n] || 0) + 1;
+        }
+      });
+
+      // Count peer skills
+      (state.peers || []).forEach(p => {
+        if (p.skills && Array.isArray(p.skills)) {
+          p.skills.forEach(s => {
+            const n = normalizeSkill(s);
+            skillCounts[n] = (skillCounts[n] || 0) + 1;
+          });
+        }
+      });
+
+      // Sort by count desc
+      const sorted = Object.entries(skillCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 8); // Top 8
+
+      trendingChart.data.labels = sorted.map(i => i[0]);
+      trendingChart.data.datasets[0].data = sorted.map(i => i[1]);
+      trendingChart.data.datasets[0].label = 'Skill Frequency (Network)';
       trendingChart.update();
     }
   }
