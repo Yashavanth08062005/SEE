@@ -89,7 +89,10 @@
       renderMySkills();
       fetchAndRenderSkillMatch();
     }
-    if (id === "peers") renderPeerList();
+    if (id === "peers") {
+      renderPeerList();
+      renderRequests();
+    }
     if (id === "skillgap") renderGap();
 
     // hash
@@ -617,15 +620,126 @@
 
   async function requestPeer(user) {
     try {
+      // Server expects receiverEmail, but user object has name/username. Username is email.
       const res = await fetch('/api/peers/request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ senderId: currentUserId, receiverId: user.id })
+        body: JSON.stringify({ senderId: currentUserId, receiverEmail: user.username })
       });
+      const data = await res.json();
       if (res.ok) {
         alert("Request sent!");
       } else {
-        alert("Failed to send request.");
+        alert(data.error || "Failed to send request.");
+      }
+    } catch (e) { console.error(e); }
+  }
+
+  // Add Peer Manually (by Email) - Fix for User Request
+  const addPeerBtn = document.getElementById("addPeerBtn");
+  if (addPeerBtn) {
+    addPeerBtn.addEventListener("click", async () => {
+      const input = document.getElementById("peerEmailInput");
+      const email = input.value.trim();
+      if (!email) {
+        alert("Please enter a peer email");
+        return;
+      }
+
+      try {
+        // 1. Search for user first to verify existence (optional but updates UI state if we wanted)
+        // Actually direct request handles verification too.
+
+        // 2. Send Request
+        const res = await fetch('/api/peers/request', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ senderId: currentUserId, receiverEmail: email })
+        });
+        const data = await res.json();
+
+        if (data.error) {
+          alert(data.error);
+        } else {
+          alert("Peer request sent successfully! They will appear in your list once they accept.");
+          input.value = "";
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Failed to send request");
+      }
+    });
+  }
+
+  // Peer Requests Logic
+  const pendingRequestsList = document.getElementById("pendingRequestsList");
+
+  async function renderRequests() {
+    if (!pendingRequestsList) return;
+    pendingRequestsList.innerHTML = "<div class='muted'>Loading...</div>";
+
+    try {
+      const res = await fetch(`/api/peers/requests/${currentUserId}`);
+      const requests = await res.json();
+
+      pendingRequestsList.innerHTML = "";
+      if (requests.length === 0) {
+        pendingRequestsList.innerHTML = "<div class='muted'>No pending requests.</div>";
+        return;
+      }
+
+      requests.forEach(req => {
+        const div = document.createElement("div");
+        div.className = "peer-card";
+        div.style.borderLeft = "4px solid #FFB000"; // Highlight pending
+
+        let compDisplay = "No company";
+        if (req.company && Array.isArray(req.company)) compDisplay = req.company.join(", ");
+        else if (req.company) compDisplay = req.company;
+
+        div.innerHTML = `
+          <div style="display:flex;align-items:center;gap:10px">
+             <div style="width:32px;height:32px;background:#FFB000;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#000;font-weight:bold;font-size:10px">?</div>
+             <div>
+               <strong>${escapeHtml(req.name || req.email)}</strong>
+               <div class="small">${escapeHtml(req.email)}</div>
+               <div class="muted" style="font-size:11px">${escapeHtml(compDisplay)}</div>
+             </div>
+          </div>
+          <div>
+            <button class="small-btn primary acceptBtn" style="background:var(--accent);color:var(--accent-text)">Accept</button>
+            <button class="small-btn danger rejectBtn" style="margin-left:5px">Reject</button>
+          </div>
+        `;
+
+        div.querySelector(".acceptBtn").addEventListener("click", () => respondToRequest(req.id, 'accept'));
+        div.querySelector(".rejectBtn").addEventListener("click", () => respondToRequest(req.id, 'reject'));
+
+        pendingRequestsList.appendChild(div);
+      });
+
+    } catch (e) {
+      console.error(e);
+      pendingRequestsList.innerHTML = "<div class='muted'>Error loading requests.</div>";
+    }
+  }
+
+  async function respondToRequest(reqId, action) {
+    try {
+      const res = await fetch('/api/peers/respond', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestId: reqId, action })
+      });
+      if (res.ok) {
+        alert(`Request ${action}ed!`);
+        renderRequests();
+        if (action === 'accept') {
+          // reload state to get new peer
+          loadState();
+        }
+      } else {
+        alert("Failed to process request");
       }
     } catch (e) { console.error(e); }
   }
